@@ -121,7 +121,7 @@ public:
       std::cout << "Sending testMessage via Call context ID: " << call << std::endl;
 
       int i = startNum;
-      while (i <= startNum + 900) // true
+      while (i <= startNum + 4) // true
       {
 
          // MessageFormat *msg = new MessageFormat();
@@ -182,27 +182,31 @@ public:
             switch (static_cast<Type>(reinterpret_cast<long>(got_tag)))
             {
             case Type::CONNECT:
-               std::cout << "Server connected." << std::endl;
+               std::cout << "  Server connected." << std::endl;
                call->serverConnected = true;
                break;
             case Type::WRITES_DONE:
-               std::cout << "Streaming complete for that bidirectional stream:" << got_tag << std::endl;
+               std::cout << "  Streaming complete for that bidirectional stream:" << got_tag << std::endl;
                break;
             default:
-               std::cout << "Received message :" << call->request.has_message() << ":" << call->reply.has_message() << ":" << std::endl;
+               std::cout << "  Request has message: " << call->request.has_message() << std::endl;
+               std::cout << "  Reply has message: " << call->reply.has_message() << std::endl;
                //Process requests from the server
                if (!call->request.has_message() && !call->reply.has_message())
                {
                   if (!call->serverConnected) {
-                     std::cout << "Server connected." << std::endl;
+                     std::cout << "  Server connected." << std::endl;
                      call->serverConnected = true;
                      break;
                   }
                }
                if (call->reply.has_message())
                {
-                  std::cout << "Read a new message:" << call->reply.message() << std::endl;
-                  call->request.clear_message();
+                  std::cout << "  Read a new message:" << call->reply.message() << std::endl;
+                  if (call->reply.message() == "WRITING DONE")
+                  {
+                     call->request.clear_message();
+                  }
                   call->reply.clear_message();
                }
                if (call->request.has_message())
@@ -229,7 +233,7 @@ private:
    // closed). Returns false when the stream is requested to be closed.
    bool evaluateMessage(const std::string &user, AsyncClientCall *call)
    {
-      std::cout << "Check write status:" << call->request.has_message() << std::endl;
+      // std::cout << "Check write status:" << call->request.has_message() << std::endl;
 
       while (call->request.has_message() == 1 || !call->serverConnected)
       {
@@ -239,7 +243,7 @@ private:
 
       if (user == "quit")
       {
-         std::cout << " ** Sending complete from: " << call << std::endl;
+         std::cout << "**** Sending complete from: " << call << std::endl;
          call->stream_->WritesDone(reinterpret_cast<void *>(Type::WRITES_DONE));
          return false;
       }
@@ -255,7 +259,7 @@ private:
       if (call->request.has_message() == 0)
       {
          call->request.set_message(user);
-         std::cout << " ** Sending request from: " << call << std::endl;
+         std::cout << "**** Sending request from: " << call << std::endl;
          call->stream_->Write(call->request, (void *)call);
       }
       return true;
@@ -279,7 +283,7 @@ private:
 int main(int argc, char **argv)
 {
    // Give the number of bidirectional pools as input
-   int poolCount = 1;
+   int poolCount = 2;
 
    // Instantiate the client. It requires a channel, out of which the actual RPCs
    // are created. This channel models a connection to an endpoint (in this case,
