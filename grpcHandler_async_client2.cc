@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <sstream>
 #include <ctime>
+#include <unistd.h>
 
 #include <grpc/support/log.h>
 #include <grpcpp/grpcpp.h>
@@ -120,18 +121,18 @@ public:
 
       std::cout << "Sending testMessage via Call context ID: " << call << std::endl;
 
-      int i = startNum;
-      while (i <= startNum + 4) // true
-      {
+      // int i = startNum;
+      // while (i <= startNum + 4) // true
+      // {
 
          // MessageFormat *msg = new MessageFormat();
-         call->mac = mac + std::to_string(i);
+         call->mac = mac + std::to_string(startNum; //+ std::to_string(i);
          // msg->call = call;
 
          std::string text;
          std::stringstream ss;
          ss << call;
-         text = "testMessage from : " + mac + std::to_string(i);
+         text = "testMessage from : " + mac + std::to_string(startNum); //+ std::to_string(i);
          /*if (i == 3) {
             text = "quit";
          }*/
@@ -139,10 +140,10 @@ public:
          {
             std::cout << "TestMessage send complete from Call context ID : " << call << std::endl;
             std::cout << "Quitting." << std::endl;
-            break;
+            // break;
          }
-         i++;
-      }
+      //    i++;
+      // }
    }
 
    /*void AsyncHelloRequestNextMessage(AsyncClientCall *call)
@@ -320,15 +321,23 @@ int main(int argc, char **argv)
          //Wait until server is connected before we start sending NDRs
       }
       std::cout << "Server connected for " << greeter.hashMap[clientId] << " and we are good to process NDRs" << std::endl;
-      t[i] = std::thread(&GrpcHandlerClient::sendMessage, &greeter, macString, i * 1000, greeter.hashMap[clientId]); // The actual RPC call!
-                                                                                                                        // greeter.sendMessage(macString + to_string(j), greeter.hashMap[clientId]->call);
+      // t[i] = std::thread(&GrpcHandlerClient::sendMessage, &greeter, macString, i * 1000, greeter.hashMap[clientId]); // The actual RPC call
    }
+
+   // send a random number of messages to different rpcs
+   for (int i = 0; i < 10; i++) {
+      greeter.sendMessage(macString, i, greeter.hashMap[1]);
+      usleep(200);
+      greeter.sendMessage(macString, i, greeter.hashMap[2]);
+      usleep(200);
+   }
+
    // Join the threads with the main thread
-   for (int i = 0; i < poolCount; ++i)
-   {
-      std::cout << "Message processing for " << greeter.hashMap[clientId] << " complete" << std::endl;
-      t[i].join();
-   }
+   // for (int i = 0; i < poolCount; ++i)
+   // {
+   //    std::cout << "Message processing for " << greeter.hashMap[clientId] << " complete" << std::endl;
+   //    t[i].join();
+   // }
    time_t then = time(0);
    std::cout << "Time difference for processing is all messages is " << then-now << " seconds" << std::endl;
 
