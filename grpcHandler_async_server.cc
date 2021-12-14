@@ -103,7 +103,7 @@ public:
       break;
 
     case NdrStatus::READ:
-      // TODO remove this?
+      // TODO remove this? or move it outside of the switch statement
       // Meaning client said it wants to end the stream either by a 'writedone' or 'finish' call.
       if (!ok)
       {
@@ -119,23 +119,21 @@ public:
       if (request_.message() == "WRITES_DONE")
       {
         status_ = NdrStatus::WRITE;
-        usleep(500);
         PutTaskBackToQueue();
       }
       else
       {
         // simulate the generation of responses
-        // TODO make variable number of responses
         globalQueue.push({(void *)this, "HO PREP"});
-        hoPrepCount++;
-        std::cout << "HO Prep Count incremented:" << hoPrepCount << std::endl;
-        // localQueue.push("HO PREP");
-        //  continue reading from the client
-        rw_.Read(&request_, (void *)this);
+      //   hoPrepCount++;
+      //   std::cout << "HO Prep Count incremented:" << hoPrepCount << std::endl;
+
+        // write responses back to client
+        status_ = NdrStatus::WRITE;
+        PutTaskBackToQueue();
+      // //  continue reading from the client
+      // rw_.Read(&request_, (void *)this);
       }
-      // reply_.set_message("NDR DONE");
-      // rw_.Write(reply_, (void *)this);
-      // status_ = NdrStatus::WRITE;
       break;
 
     case NdrStatus::WRITE:
