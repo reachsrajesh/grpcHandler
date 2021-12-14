@@ -28,6 +28,8 @@ using grpc::Status;
 using grpcHandler::GrpcHandler;
 using grpcHandler::NdrResponse;
 
+int hoPrepCount = 0;
+
 class GrpcHandlerClient
 {
 
@@ -70,6 +72,8 @@ class GrpcHandlerClient
 
       int thresholdCount;
 
+      time_t waitingStartTime;
+
       std::unique_ptr<Alarm> alarm_;
 
       // The bidirectional, asynchronous stream for sending/receiving messages.
@@ -81,12 +85,10 @@ public:
    std::queue<AsyncClientCall *> contextQueue;
 
    bool serverConnected;
-   //auto state = GRPC_CHANNEL_READY;
 
    explicit GrpcHandlerClient(std::shared_ptr<Channel> channel, int streamCount)
        : stub_(GrpcHandler::NewStub(channel))
    {
-
       // Is server up before we send the RPC?
       std::chrono::time_point<std::chrono::system_clock> _deadline = std::chrono::system_clock::now() + std::chrono::hours(24);
       auto state = channel->GetState(true);
@@ -106,6 +108,7 @@ public:
       }
    }
 
+   // returns the next AsyncClientCall
    AsyncClientCall* getNextContext()
    {
       AsyncClientCall *call = contextQueue.front();
@@ -114,63 +117,29 @@ public:
       return call;
    }
 
+   // creates and stores AsyncClientCalls
    void establishConnectionToStreams(int streamCount)
    {
-
-      //TODO - contextQueue needs to be cleared
       for (int i = 1; i <= streamCount; i++)
       {
-         // Create Context here for this unique contextID
-         // MessageFormat *msg = new MessageFormat();
+         // create new AsynceClientCall
          AsyncClientCall *call = new AsyncClientCall();
-         // msg->call = call;
-
-         // stub_->PrepareAsyncSayHello() creates an RPC object, returning
-         // an instance to store in "call" but does not actually start the RPC
-         // Because we are using the asynchronous API, we need to hold on to
-         // the "call" instance in order to get updates on the ongoing RPC.
          call->status = ClientStatus::CONNECT;
-         call->stream_ =
-             stub_->AsyncSayHelloNew(&call->context, &cq_, (void *)call);
-         // TODO - need to add to hashMap in the future
-         // hashMap[i] = call;
+         call->stream_ = stub_->AsyncSayHelloNew(&call->context, &cq_, (void *)call);
          contextQueue.push(call);
+         // TODO - need to add to hashMap instead of queue
+         // hashMap[i] = call;
       }
    }
 
-   // Assembles the client's payload and sends it to the server.
+   // Adds a message from given mac address to given call's local queue
    void sendToQueue(std::string mac, int startNum, AsyncClientCall *call)
    {
-      // Call object to store rpc data
-      // AsyncClientCall *call = new AsyncClientCall;
-
-      // stub_->PrepareAsyncSayHello() creates an RPC object, returning
-      // an instance to store in "call" but does not actually start the RPC
-      // Because we are using the asynchronous API, we need to hold on to
-      // the "call" instance in order to get updates on the ongoing RPC.
-      // call->stream_ =
-      //    stub_->AsyncSayHelloNew(&call->context, &cq_, (void *)this);
-
-      // StartCall initiates the RPC call
-      //call->stream_->StartCall(reinterpret_cast<void *>(Type::CONNECT));
-
-      // call->stream_->Write(call->request, reinterpret_cast<void *>(Type::WRITE));
-
-      // Get call context ID
-
-      // std::cout << "Sending testMessage via Call context ID: " << call << std::endl;
-
-      // int i = startNum;
-      // while (i <= startNum + 4) // true
-      // {
-
-      // MessageFormat *msg = new MessageFormat();
       call->mac = mac + std::to_string(startNum); //+ std::to_string(i);
-      // msg->call = call;
 
       std::string text;
-      std::stringstream ss;
-      ss << call;
+      // std::stringstream ss;
+      // ss << call;
       text = "testMessage from : " + mac + std::to_string(startNum); //+ std::to_string(i);
       call->localQueue.push(text);
    }
@@ -197,44 +166,24 @@ public:
          auto state = channelName->GetState(true);
          if (state != GRPC_CHANNEL_READY)
          {
-            // loop until the connection is re-established
-            // state = channelName->GetState(true);
-            // std::cout << "Current State is " << state << std::endl;
             std::cout << "Connection to server lost." << std::endl;
+            // loop until the connection is re-established
             while (channelName->GetState(true) != GRPC_CHANNEL_READY)
             {
-               // // connection re-established
-               // // now re-establish each context with server
-               // std::cout << "Restart existing context ID from here" << std::endl;
-               // // TODO - we could lose a read here, need to check if reply is set and handle accordingly
-               // call->status = ClientStatus::CONNECT;
-               // call->stream_ =
-               //    stub_->AsyncSayHelloNew(&call->context, &cq_, (void *)call);
+
             }
-            // connection re-established
-            // now re-establish each context with server
-            std::cout << "Restart existing context IDs from here" << std::endl;
-            // we could lose a read here, need to check if reply is set and handle accordingly
+            std::cout << "Connection to server re-established." << std::endl;
+
+            // re-establsih streams with server
             int size = contextQueue.size();
             while (contextQueue.size() > 0)
             {
-               // remove old AsyncClientCalls
                contextQueue.pop();
+               // TODO - delete call
             }
+            std::cout << "Re-establishing " << size << " streams with server." << std::endl;
+            // TODO - this should be a configurable parameter, instead of using contextQueue.size()
             establishConnectionToStreams(size);
-            std::cout << contextQueue.size() << std::endl;
-
-            // loop through contexts
-
-            // for (int i = 0; i < contextQueue.size(); i++)
-            // {
-               // call->status = ClientStatus::CONNECT;
-               // call->stream_ =
-               //    stub_->AsyncSayHelloNew(&call->context, &cq_, (void *)call);
-            // }
-            // std::cout << "Call sent yaheeerd" << std::endl;
-            // this is necessary, as the contexts need to reconnect with the server
-            // continue;
          }
 
          // It's important to process all tags even if the ok is false. One might
@@ -243,137 +192,109 @@ public:
          // void*, so we don't have extra memory management to take care of.
          if (ok)
          {
-            // std::cout << "**** Call Tag: " << got_tag << std::endl;
+            std::cout << "**** Call Tag: " << got_tag << std::endl;
             switch (call->status)
             {
-            case ClientStatus::CONNECT:
-               std::cout << "   CONNECT" << std::endl;
-               std::cout << "   Server connected." << std::endl;
-               call->serverConnected = true;
-               call->status = ClientStatus::WRITE;
-               PutTaskBackToQueue(call);
-               break;
-            // case ClientStatus::RECONNECT:
-            //    std::cout << "   RECONNECT" << std::endl;
-            //    std::cout << "   Server connected." << std::endl;
-            //    call->serverConnected = true;
-            //    // call->status = ClientStatus::WRITE;
-            //    // PutTaskBackToQueue(c all);
-               break;
-            case ClientStatus::READ:
-               std::cout << "   READ" << std::endl;
-               std::cout << "   Read a new message:" << call->reply.message() << std::endl;
-               if (call->reply.message() == "WRITES_DONE")
-               {
-                  // TODO - maybe don't need to clear this
-                  call->request.clear_message();
-                  //call->reply.clear_message();
+               case ClientStatus::CONNECT:
+                  std::cout << "   CONNECT" << std::endl;
+                  std::cout << "   Stream connected." << std::endl;
+                  call->serverConnected = true;
                   call->status = ClientStatus::WRITE;
                   PutTaskBackToQueue(call);
-               }
-               else
-               {
-                  // continue reading messages from server
-                  call->reply.clear_message();
-                  call->stream_->Read(&call->reply, (void *)call);
-               }
-               break;
-            case ClientStatus::WRITE:
-               std::cout << "   WRITE" << std::endl;
-
-               // Is server up before we send the RPC?
-               //std::chrono::time_point<std::chrono::system_clock> _deadline = std::chrono::system_clock::now() + std::chrono::milliseconds(10000);
-               if (!call->localQueue.empty())
-               {
-                  call->thresholdCount = 0;
-                  // send a message from the queue
-                  std::cout << "   Sending message: " << call->localQueue.front() << std::endl;
-                  call->request.set_message(call->localQueue.front());
-                  call->localQueue.pop();
-                  call->stream_->Write(call->request, (void *)call);
-               }
-               else
-               {
-                  // If client and server are sending to same message to each other then
-                  if (call->reply.message() == "WRITES_DONE") {
-                     call->thresholdCount++;
+                  break;
+               case ClientStatus::READ:
+                  std::cout << "   READ" << std::endl;
+                  if (call->reply.message() == "")
+                  {
+                     // start reading messages from the server
+                     call->stream_->Read(&call->reply, (void *)call);
                   }
-                     // notify the server that the client is done sending
-                     std::cout << "   Sending message: "
-                               << "WRITES_DONE" << std::endl;
-                  if (call->thresholdCount <= 5) {
-                     call->request.set_message("WRITES_DONE");
-                     call->status = ClientStatus::WRITES_DONE;
-                     call->stream_->Write(call->request, (void *)call);
-                  } else {
-                     std::cout << "   Threshold met." << std::endl;
-                     call->reply.clear_message();
-                     // TODO - instead of threshold of messages, this should be a 5 sec timer
-                     call->thresholdCount = 0;
-                     call->status = ClientStatus::WAITING_TO_WRITE;
+                  else if (call->reply.message() == "WRITES_DONE")
+                  {
+                     // server is done writing messages, client can write
+                     call->thresholdCount++;
+                     call->request.clear_message(); // TODO - maybe don't need to clear this
+                     call->status = ClientStatus::WRITE;
                      PutTaskBackToQueue(call);
                   }
-               }
-               break;
-            case ClientStatus::WRITES_DONE:
-               std::cout << "   WRITES_DONE" << std::endl;
-               // read messages from the server
-               call->status = ClientStatus::READ;
-               call->stream_->Read(&call->reply, (void *)call);
-               break;
-            case ClientStatus::WAITING_TO_WRITE:
-               // check the localQueue until there is a message to write
-               // std::cout << "   WAITING_TO_WRITE" << std::endl;
-               // TODO - this could also be a while loop, where the client doesn't loop through
-               // the completion queue (and thus doesn't constantly check the status of the server)
-               // but for debugging reconnecting to the server, this is useful
-               if (!call->localQueue.empty())
-               {
-                  // go to WRITE
-                  std::cout << "   going to WRITE" << std::endl;
-                  call->status = ClientStatus::WRITE;
-               }
-               PutTaskBackToQueue(call);
-               break;
-            case ClientStatus::FINISH:
-               std::cout << "   FINISH" << std::endl;
-               std::cout << "   Streaming complete for Call Tag: " << got_tag << std::endl;
-               break;
-            default:
-               std::cout << "   ERROR: Unrecognized status." << std::endl;
+                  else
+                  {
+                     std::cout << "   Read a new message:" << call->reply.message() << std::endl;
+                     // process the message from the server
+                     hoPrepCount++;
+                     call->waitingStartTime = time(0);
+                     call->thresholdCount = 0;
+                     // continue reading messages from server
+                     // call->reply.clear_message();
+                     call->stream_->Read(&call->reply, (void *)call);
+                  }
+                  break;
+               case ClientStatus::WRITE:
+                  std::cout << "   WRITE" << std::endl;
+                  if (!call->localQueue.empty())
+                  {
+                     call->thresholdCount = 0;
+                     call->waitingStartTime = time(0);
+                     // send a message from the queue, then read
+                     std::cout << "   Sending message: " << call->localQueue.front() << std::endl;
+                     call->request.set_message(call->localQueue.front());
+                     call->localQueue.pop();
+                     call->status = ClientStatus::READ;
+                     call->stream_->Write(call->request, (void *)call);
+                  }
+                  else
+                  {
+                     // if (call->reply.message() == "WRITES_DONE") {
+                     //    call->thresholdCount++;
+                     // }
+                     std::cout << "Time spent waiting: " << time(0) - call->waitingStartTime << endl;
+                     if ((time(0) - call->waitingStartTime) < 5) {
+                        // notify the server that the client is done sending
+                        std::cout << "   Sending message: WRITES_DONE" << std::endl;
+                        call->request.set_message("WRITES_DONE");
+                        call->status = ClientStatus::WRITES_DONE;
+                        call->stream_->Write(call->request, (void *)call);
+                     } else {
+                        // threshold of WRITES_DONE messages has been met, wait for message to send
+                        std::cout << "   Threshold met." << std::endl;
+                        call->reply.clear_message();
+                        // TODO - instead of threshold of messages, this should be a 5 sec timer
+                        call->thresholdCount = 0;
+                        call->status = ClientStatus::WAITING_TO_WRITE;
+                        PutTaskBackToQueue(call);
+                     }
+                  }
+                  break;
+               case ClientStatus::WRITES_DONE:
+                  std::cout << "   WRITES_DONE" << std::endl;
+                  // read messages from the server
+                  call->status = ClientStatus::READ;
+                  call->stream_->Read(&call->reply, (void *)call);
+                  break;
+               case ClientStatus::WAITING_TO_WRITE:
+                  std::cout << "   WAITING_TO_WRITE" << std::endl;
+                  std::cout << "HO PREP's received: " << hoPrepCount << std::endl;
+                  // check the localQueue until there is a message to write
+                  while (call->localQueue.empty())
+                  {
 
-               // print the contents of request and reply
-               // std::cout << "  Request has message: " << call->request.has_message() << std::endl;
-               // std::cout << "  Reply has message: " << call->reply.has_message() << std::endl;
-               // // Process requests from the server
-               // if (!call->request.has_message() && !call->reply.has_message())
-               // {
-               //    if (!call->serverConnected)
-               //    {
-               //       std::cout << "  Server connected." << std::endl;
-               //       call->serverConnected = true;
-               //       break;
-               //    }
-               // }
-               // if (call->reply.has_message())
-               // {
-               //    std::cout << "  Read a new message:" << call->reply.message() << std::endl;
-               //    if (call->reply.message() == "WRITING DONE")
-               //    {
-               //       call->request.clear_message();
-               //    }
-               //    call->reply.clear_message();
-               // }
-               // if (call->request.has_message())
-               // {
-               //    call->stream_->Read(&call->reply, (void *)call);
-               // }
+                  }
+                  // message has entered to queue, go to WRITE
+                  std::cout << "   going to WRITE" << std::endl;
+                  call->waitingStartTime = time(0);
+                  call->status = ClientStatus::WRITE;
+                  PutTaskBackToQueue(call);
+                  break;
+               case ClientStatus::FINISH:
+                  std::cout << "   FINISH" << std::endl;
+                  std::cout << "   Streaming complete for Call Tag: " << got_tag << std::endl;
+                  // TODO - actually delete call on FINISH
+                  // delete call;
+                  break;
+               default:
+                  std::cout << "   ERROR: Unrecognized status." << std::endl;
             }
          }
-
-         // Once we're complete, deallocate the call object.
-         // TODO - actually delete call on FINISH
-         // delete call;
       }
    }
 
@@ -382,39 +303,39 @@ private:
    // wait for the response. Instead queues up a tag in the completion queue
    // that is notified when the server responds back (or when the stream is
    // closed). Returns false when the stream is requested to be closed.
-   bool evaluateMessage(const std::string &user, AsyncClientCall *call)
-   {
-      // std::cout << "Check write status:" << call->request.has_message() << std::endl;
+   // bool evaluateMessage(const std::string &user, AsyncClientCall *call)
+   // {
+   //    // std::cout << "Check write status:" << call->request.has_message() << std::endl;
 
-      while (call->request.has_message() == 1 || !call->serverConnected)
-      {
-         // Wait until server is connected
-         // Also wait until that client context request is processed successfully for future requests from that MAC
-      }
+   //    while (call->request.has_message() == 1 || !call->serverConnected)
+   //    {
+   //       // Wait until server is connected
+   //       // Also wait until that client context request is processed successfully for future requests from that MAC
+   //    }
 
-      // if (user == "quit")
-      // {
-      //    std::cout << "**** Sending complete from: " << call << std::endl;
-      //    call->stream_->WritesDone(reinterpret_cast<void *>(Type::WRITES_DONE));
-      //    return false;
-      // }
+   //    // if (user == "quit")
+   //    // {
+   //    //    std::cout << "**** Sending complete from: " << call << std::endl;
+   //    //    call->stream_->WritesDone(reinterpret_cast<void *>(Type::WRITES_DONE));
+   //    //    return false;
+   //    // }
 
-      // This is important: You can have at most one write or at most one read
-      // at any given time. The throttling is performed by gRPC completion
-      // queue. If you queue more than one write/read, the stream will crash.
-      // Because this stream is bidirectional, you *can* have a single read
-      // and a single write request queued for the same stream. Writes and reads
-      // are independent of each other in terms of ordering/delivery.
+   //    // This is important: You can have at most one write or at most one read
+   //    // at any given time. The throttling is performed by gRPC completion
+   //    // queue. If you queue more than one write/read, the stream will crash.
+   //    // Because this stream is bidirectional, you *can* have a single read
+   //    // and a single write request queued for the same stream. Writes and reads
+   //    // are independent of each other in terms of ordering/delivery.
 
-      // Data we are sending to the server.
-      if (call->request.has_message() == 0)
-      {
-         call->request.set_message(user);
-         std::cout << "**** Sending request from: " << call << std::endl;
-         call->stream_->Write(call->request, (void *)call);
-      }
-      return true;
-   }
+   //    // Data we are sending to the server.
+   //    if (call->request.has_message() == 0)
+   //    {
+   //       call->request.set_message(user);
+   //       std::cout << "**** Sending request from: " << call << std::endl;
+   //       call->stream_->Write(call->request, (void *)call);
+   //    }
+   //    return true;
+   // }
 
    // uses the GRPC alarm to put tasks to the back of the completion queue
    void PutTaskBackToQueue(AsyncClientCall *call)
@@ -447,15 +368,16 @@ const char *ParseCmdPara(char *argv, const char *para)
 int main(int argc, char **argv)
 {
 
-   if (argc != 4)
+   if (argc != 5)
    {
-      std::cout << "Usage:./program --streamCount=xx --messageCount=xx --port=xx";
+      std::cout << "Usage:./program --streamCount=xx --messageCount=xx --messageInterval=xx --port=xx";
       return 0;
    }
 
    int streamCount = std::atoi(ParseCmdPara(argv[1], "--streamCount="));
    int g_message_num = std::atoi(ParseCmdPara(argv[2], "--messageCount="));
-   int g_port = std::atoi(ParseCmdPara(argv[3], "--port="));
+   int messageInterval = std::atoi(ParseCmdPara(argv[3], "--messageInterval="));
+   int g_port = std::atoi(ParseCmdPara(argv[4], "--port="));
 
    // Instantiate the client. It requires a channel, out of which the actual RPCs
    // are created. This channel models a connection to an endpoint (in this case,
@@ -474,39 +396,18 @@ int main(int argc, char **argv)
    // Spawn reader thread that loops indefinitely
    std::thread thread_ = std::thread(&GrpcHandlerClient::AsyncCompleteRpc, &greeter, channelName);
 
-   // int threadCount = 2;
-   // std::thread t[streamCount];
-
    int id = 0;
    time_t now = time(0);
    std::string macString = "00a0bc";
-   /*
-   for (int i = 0; i < streamCount; i++)
-   {
-      id++;
-      // round robin the id for every MAC
-      if (id > streamCount)
-      {
-         id = 1;
-      }
 
-      while (!greeter.getNextContext()->serverConnected)
-      {
-         // Wait until server is connected before we start sending messages
-      }
-      // std::cout << "Server connected for " << greeter.hashMap[id] << " and we are good to process messages" << std::endl;
-      // t[i] = std::thread(&GrpcHandlerClient::sendToQueue, &greeter, macString, i * 1000, greeter.hashMap[id]); // The actual RPC call
-      // t[i] = std::thread(&GrpcHandlerClient::sendToQueue, &greeter, macString, i * 1000, greeter.hashMap[id]); // The actual RPC call
-   }*/
-
-   // send a random number of messages to different rpcs
+   // round robin messages between streams
    for (int i = 0; i < g_message_num; i++)
    {
       greeter.sendToQueue(macString, i, greeter.getNextContext());
-      sleep(3);
-      // greeter.sendToQueue(macString, i, greeter.getNextContext());
-      // usleep(500);
-      //std::cout << greeter.contextQueue.size() << std::endl;
+      if (messageInterval) {
+         // simulate time between messages
+         sleep(messageInterval);
+      }
    }
 
    std::cout << "Queue processing complete" << std::endl;
@@ -524,6 +425,7 @@ int main(int argc, char **argv)
 
    time_t then = time(0);
    std::cout << "Time difference for processing is all messages is " << then - now << " seconds" << std::endl;
+   std::cout << "HO PREP's received: " << hoPrepCount << std::endl;
 
    // Below is the block for AsyncComplete queue which blocks for ever until we have a client restart..
    std::cout << "Press control-c to quit" << std::endl
